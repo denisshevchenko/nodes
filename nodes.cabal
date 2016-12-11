@@ -1,0 +1,33 @@
+name:                nodes
+version:             0.1.0.0
+synopsis:            Cloud Haskell nodes
+description:         Please see README.md
+homepage:            https://github.com/denisshevchenko/nodes#readme
+license:             MIT
+license-file:        LICENSE
+author:              Denis Shevchenko
+maintainer:          me@dshevchenko.biz
+copyright:           2016 Denis Shevchenko
+category:            Web
+build-type:          Simple
+cabal-version:       >=1.10
+
+executable nodes
+  hs-source-dirs:      src
+  main-is:             Main.hs
+
+  other-modules:       CommandLine
+                     , EndpointParsers
+                     , Types
+  
+  build-depends:       attoparsec
+                     , base                     >= 4.7 && < 5
+                     , distributed-process
+                     , network-transport
+                     , network-transport-tcp
+                     , optparse-applicative
+                     , text
+  
+  default-language:    Haskell2010
+
+  ghc-options:       -Wall
