@@ -1,0 +1,2 @@
+# nodes
+Cloud Haskell nodes
