@@ -22,3 +22,11 @@ type NodesEndpoints = [NodeEndpoint]
 data WhatHappened = CannotCreateTransport
                   | CannotParseNodesEndpoints
                   deriving Show
+
+type Number         = Double
+type Numbers        = [Double]
+type NumbersSum     = Double
+type Index          = Int
+type SendingTime    = Integer
+type NumberMessage  = (SendingTime, Number)
+type Result         = (Numbers, NumbersSum)
