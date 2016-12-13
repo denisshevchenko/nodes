@@ -5,19 +5,17 @@
 module Main where
 
 import           Types
+import           Utils
 import           CommandLine
 import           EndpointParsers
 
-import           Control.Concurrent                 ( threadDelay )
 import           Control.Monad                      ( forever, when )
 import           Control.Distributed.Process
 import           Control.Distributed.Process.Node
-import           Control.Monad.IO.Class             ( MonadIO ) 
+import qualified Control.Distributed.Backend.P2P    as P2P
 import           Network.Transport.TCP              ( createTransport, defaultTCPParameters )
-import           System.IO                          ( hPutStrLn, stderr )
 import qualified System.Exit                        as SE
-import           System.Random
-import           Options.Applicative
+import           Options.Applicative                ( execParser )
 import           Data.Attoparsec.Text               ( parseOnly )
 import qualified Data.Text.IO                       as TIO
 import           Data.List                          ( sort )
@@ -31,8 +29,10 @@ main = execParser options >>= \Parameters{..} ->
             when (gracePeriod <= 0)    $ SE.die "Grace period must be positive number."
             when (null nodesEndPoints) $ SE.die "No nodes found, please check your config file."
             mapM_ (runNode seed) nodesEndPoints
-            waitForSeconds sendPeriod
-            -- Ok, now we have to send 'stop' message to all nodes...
+            waitForSeconds $ sendPeriod - delayForDispatcher 
+            sendStopMessageToAllNodes nodesEndPoints 
+            putStrLn "SENT!"
+            waitForSeconds 10            
 
 -- | Creates transport point and new node, after that runs one process on it.
 runNode :: Maybe Int -> NodeEndpoint -> IO ()
@@ -50,7 +50,13 @@ runNode seed (NodeEndpoint ip port) =
 
 runMessagesReceiver :: ProcessId -> [NumberMessage] -> Process [NumberMessage]
 runMessagesReceiver senderPId receivedMessages = do
+    nodeIAmRunningOn <- getSelfNode
+    -- "IAMHERE: nid://127.0.0.1:10200:0"
+    -- Each node contains only one receiver, so it will be unique label.
+    getSelfPid >>= register (show nodeIAmRunningOn)
+    
     message <- expect :: Process NumberMessage
+    liftIO $ putStrLn "RECEIVED!"
     if thisWasLast message
         then kill senderPId "Sending period is over." >> return receivedMessages
         else runMessagesReceiver senderPId $ receivedMessages ++ [message]
@@ -63,10 +69,13 @@ runMessagesReceiver senderPId receivedMessages = do
 runMessagesSender :: Maybe Int -> Process ()
 runMessagesSender seed = forever $ do
     number <- liftIO $ generateRandomNumber seed
-    liftIO $ print number
+    timeStamp <- liftIO $ getTimeStamp
+    liftIO $ print $ (timeStamp, number)
+    waitForSeconds 1
 
+-- Forms final result and prints it out.
 printOutResult :: [NumberMessage] -> Process ()
-printOutResult [] = liftIO $ putStrLn "No message received."
+printOutResult [] = liftIO $ putStrLn "No messages received."
 printOutResult allReceivedMessages = liftIO $ print result
   where
     result = prepareResult sortedBySendingTime
@@ -94,71 +103,16 @@ prepareResult messagesWithTimestamps i (numbers, numbersSum) =
   where
     (_, ithNumber) = messagesWithTimestamps !! i
 
-generateRandomNumber :: Maybe Int -> IO Double
-generateRandomNumber maybeSeed = case maybeSeed of
-    Just seed -> return $ let (n, _) = randomR range $ mkStdGen seed in n
-    Nothing   -> randomRIO range
+sendStopMessageToAllNodes :: [NodeEndpoint] -> IO ()
+sendStopMessageToAllNodes nodesEndPoints =
+    P2P.bootstrap "127.0.0.1"
+                  "10210"
+                  nodesIds
+                  initRemoteTable $ do
+        waitForSeconds delayForDispatcher -- We give dispatcher a second to discover other nodes
+        P2P.nsendPeers "nid://127.0.0.1:10201:0" stopMessage
   where
-    range = (0.00000000000000001, 1.0)
-
-replyBack :: (ProcessId, String) -> Process ()
-replyBack (sender, msg) = send sender msg
-
-logMessage :: String -> Process ()
-logMessage msg = say $ "handling " ++ msg
-
-
--- | Stops current thread for N seconds.
-waitForSeconds :: MonadIO m => Int -> m ()
-waitForSeconds s = liftIO . threadDelay $ s * 1000000
-
--- | Stops current thread for N milliseconds.
-waitForMilliSeconds :: MonadIO m => Int -> m ()
-waitForMilliSeconds s = liftIO . threadDelay $ s * 1000
-
--- | Reports about some problem.
-report :: Show a => WhatHappened -> a -> IO ()
-report what problem = hPutStrLn stderr $ show what ++ show problem
-
-
-
-
-
-
-
-{-
-    -- Spawn another worker on the local node
-    echoPid <- spawnLocal $ forever $ do
-      -- Test our matches in order against each message in the queue
-      receiveWait [match logMessage, match replyBack]
-
-    -- The `say` function sends a message to a process registered as "logger".
-    -- By default, this process simply loops through its mailbox and sends
-    -- any received log message strings it finds to stderr.
-
-    say "send some messages!"
-    send echoPid "hello"
-    self <- getSelfPid
-    send echoPid (self, "hello")
-
-    -- `expectTimeout` waits for a message or times out after "delay"
-    m <- expectTimeout 1000000
-    case m of
-      -- Die immediately - throws a ProcessExitException with the given reason.
-      Nothing  -> die "nothing came back!"
-      Just s -> say $ "got " ++ s ++ " back!"
-    -}
-
-
-
-
-
-
-
-
-
-
-
+      nodesIds = [makeNodeIdFrom node | node <- nodesEndPoints]
 
 {-
 нужно:

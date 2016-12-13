@@ -18,18 +18,19 @@ executable nodes
 
   other-modules:       CommandLine
                      , EndpointParsers
+                     , Utils
                      , Types
   
   build-depends:       attoparsec
                      , base                     >= 4.7 && < 5
                      , distributed-process
                      , distributed-process-p2p
-                     , hourglass
                      , network-transport
                      , network-transport-tcp
                      , optparse-applicative
                      , random
                      , text
+                     , time
                      , transformers
   
   default-language:    Haskell2010

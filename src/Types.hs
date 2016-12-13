@@ -23,10 +23,10 @@ data WhatHappened = CannotCreateTransport
                   | CannotParseNodesEndpoints
                   deriving Show
 
+-- Types for messages.
 type Number         = Double
-type Numbers        = [Double]
 type NumbersSum     = Double
 type Index          = Int
-type SendingTime    = Integer
+type SendingTime    = Double
 type NumberMessage  = (SendingTime, Number)
-type Result         = (Numbers, NumbersSum)
+type Result         = ([Number], NumbersSum)
