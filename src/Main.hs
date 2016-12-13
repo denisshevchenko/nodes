@@ -32,8 +32,9 @@ main = execParser options >>= \Parameters{..} ->
                 workerNodesEndpoints = tail nodesEndpoints
             mapM_ (runNode seed workerNodesEndpoints) $ workerNodesEndpoints
             waitForSeconds $ sendPeriod - delayForDispatcher 
-            sendStopMessageToAllNodes specialNodeEndpoint workerNodesEndpoints 
-            waitForSeconds gracePeriod       
+            sendStopMessageToAllNodes specialNodeEndpoint
+                                      workerNodesEndpoints
+                                      gracePeriod
 
 -- | Creates transport point and new node, after that runs one process on it.
 runNode :: Maybe Int
@@ -71,6 +72,7 @@ runMessagesSender seed workerNodesEndpoints = forever $ do
     number <- liftIO $ generateRandomNumber seed
     timeStamp <- liftIO $ getTimeStamp
     sendToAllReceivers workerNodesEndpoints $ (timeStamp, number)
+    waitForMilliSeconds 1
 
 -- Forms final result and prints it out.
 printOutResult :: [NumberMessage] -> Process ()
@@ -103,13 +105,31 @@ prepareResult messagesWithTimestamps i (numbers, numbersSum) =
     (_, ithNumber) = messagesWithTimestamps !! i
 
 -- | Sending period is over, so we send stop message to all nodes.
-sendStopMessageToAllNodes :: NodeEndpoint -> [NodeEndpoint] -> IO ()
-sendStopMessageToAllNodes (NodeEndpoint ip port) workerNodesEndpoints =
+sendStopMessageToAllNodes :: NodeEndpoint
+                          -> [NodeEndpoint]
+                          -> Seconds
+                          -> IO ()
+sendStopMessageToAllNodes (NodeEndpoint ip port)
+                          workerNodesEndpoints
+                          gracePeriod =
     createTransport ip (show port) defaultTCPParameters >>=
         either (report CannotCreateTransport)
                (sendStopMessage)
   where
     sendStopMessage transport = do
         node <- newLocalNode transport initRemoteTable
-        _ <- runProcess node $ sendToAllReceivers workerNodesEndpoints stopMessage
+        _ <- runProcess node $ do
+            sendToAllReceivers workerNodesEndpoints stopMessage
+            liftIO $ waitForSeconds gracePeriod
+            -- At this point all worker nodes shouldn't exist
+            -- (because we expect that they already finished their work and printed result out).
+            -- If at least one worker still exists - kill the program.
+            mapM_ checkReceiver workerNodesEndpoints
         return ()
+
+    checkReceiver ep = do
+        whereisRemoteAsync (makeNodeIdFrom ep) receiverLabel
+        WhereIsReply _ maybeProcessId <- expect :: Process WhereIsReply
+        case maybeProcessId of
+            Nothing -> return () -- It's ok, receiver doesn't exist as we expect.
+            _ -> liftIO $ SE.die "Some nodes still works, abort!"
