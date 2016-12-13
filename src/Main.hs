@@ -70,8 +70,7 @@ runMessagesSender :: Maybe Int -> [NodeEndpoint] -> Process ()
 runMessagesSender seed workerNodesEndpoints = forever $ do
     number <- liftIO $ generateRandomNumber seed
     timeStamp <- liftIO $ getTimeStamp
-    sendToAllReceivers workerNodesEndpoints $ (timeStamp, number) 
-    waitForSeconds 1
+    sendToAllReceivers workerNodesEndpoints $ (timeStamp, number)
 
 -- Forms final result and prints it out.
 printOutResult :: [NumberMessage] -> Process ()
