@@ -24,12 +24,15 @@ main = execParser options >>= \Parameters{..} ->
     parseOnly parseEndpoints <$> TIO.readFile nodesConfig >>= \case
         Left problem -> report CannotParseNodesEndpoints problem
         Right nodesEndpoints -> do
-            when (sendPeriod <= 0)     $ SE.die "Sending period must be positive number."
-            when (gracePeriod <= 0)    $ SE.die "Grace period must be positive number."
-            when (null nodesEndpoints) $ SE.die "No nodes found, please check your config file."
-            mapM_ (runNode seed nodesEndpoints) nodesEndpoints
+            when (sendPeriod <= 0)  $ SE.die "Sending period must be positive number."
+            when (gracePeriod <= 0) $ SE.die "Grace period must be positive number."
+            when (length nodesEndpoints < 3) $ SE.die "Need at least three nodes, please check your config file."
+            -- First node is for stop message broadcasting.
+            let specialNodeEndpoint = head nodesEndpoints
+                workerNodesEndpoints = tail nodesEndpoints
+            mapM_ (runNode seed workerNodesEndpoints) $ workerNodesEndpoints
             waitForSeconds $ sendPeriod - delayForDispatcher 
-            sendStopMessageToAllNodes nodesEndpoints 
+            sendStopMessageToAllNodes specialNodeEndpoint workerNodesEndpoints 
             waitForSeconds gracePeriod       
 
 -- | Creates transport point and new node, after that runs one process on it.
@@ -37,7 +40,7 @@ runNode :: Maybe Int
         -> [NodeEndpoint]
         -> NodeEndpoint
         -> IO ()
-runNode seed nodesEndpoints (NodeEndpoint ip port) =
+runNode seed workerNodesEndpoints (NodeEndpoint ip port) =
     createTransport ip (show port) defaultTCPParameters >>=
         either (report CannotCreateTransport)
                (\transport -> do
@@ -45,7 +48,7 @@ runNode seed nodesEndpoints (NodeEndpoint ip port) =
                     _ <- forkProcess node $ do
                         -- Each node contains only one receiver, so it will be unique label.
                         getSelfPid >>= register receiverLabel
-                        senderPId <- spawnLocal $ runMessagesSender seed nodesEndpoints
+                        senderPId <- spawnLocal $ runMessagesSender seed workerNodesEndpoints
                         allReceivedMessages <- runMessagesReceiver senderPId []
                         printOutResult allReceivedMessages
                     return ()
@@ -64,10 +67,10 @@ runMessagesReceiver senderPId receivedMessages = do
     thisWasLast (_, number) = number < 0
 
 runMessagesSender :: Maybe Int -> [NodeEndpoint] -> Process ()
-runMessagesSender seed nodesEndpoints = forever $ do
+runMessagesSender seed workerNodesEndpoints = forever $ do
     number <- liftIO $ generateRandomNumber seed
     timeStamp <- liftIO $ getTimeStamp
-    sendToAllReceivers nodesEndpoints $ (timeStamp, number) 
+    sendToAllReceivers workerNodesEndpoints $ (timeStamp, number) 
     waitForSeconds 1
 
 -- Forms final result and prints it out.
@@ -101,13 +104,13 @@ prepareResult messagesWithTimestamps i (numbers, numbersSum) =
     (_, ithNumber) = messagesWithTimestamps !! i
 
 -- | Sending period is over, so we send stop message to all nodes.
-sendStopMessageToAllNodes :: [NodeEndpoint] -> IO ()
-sendStopMessageToAllNodes nodesEndpoints =
-    createTransport "127.0.0.1" "10300" defaultTCPParameters >>=
+sendStopMessageToAllNodes :: NodeEndpoint -> [NodeEndpoint] -> IO ()
+sendStopMessageToAllNodes (NodeEndpoint ip port) workerNodesEndpoints =
+    createTransport ip (show port) defaultTCPParameters >>=
         either (report CannotCreateTransport)
                (sendStopMessage)
   where
     sendStopMessage transport = do
         node <- newLocalNode transport initRemoteTable
-        _ <- runProcess node $ sendToAllReceivers nodesEndpoints stopMessage
+        _ <- runProcess node $ sendToAllReceivers workerNodesEndpoints stopMessage
         return ()
