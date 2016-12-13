@@ -9,7 +9,11 @@ import           Types
 import           Data.Time.Clock.POSIX              ( getPOSIXTime )
 import           Control.Concurrent                 ( threadDelay )
 import           Control.Monad.IO.Class             ( MonadIO ) 
-import           Control.Distributed.Process        ( NodeId, liftIO )
+import           Control.Distributed.Process        ( Process
+                                                    , NodeId
+                                                    , liftIO
+                                                    , nsendRemote
+                                                    )
 import qualified Control.Distributed.Backend.P2P    as P2P
 import           System.IO                          ( hPutStrLn, stderr )
 import           System.Random                      ( randomR
@@ -51,3 +55,11 @@ waitForMilliSeconds s = liftIO . threadDelay $ s * 1000
 -- | Reports about some problem.
 report :: Show a => WhatHappened -> a -> IO ()
 report what problem = hPutStrLn stderr $ show what ++ show problem
+
+-- | Sends message to all receivers on all nodes.
+sendToAllReceivers :: [NodeEndpoint] -> NumberMessage -> Process ()
+sendToAllReceivers nodesEndpoints message =
+    mapM_ (\ep -> nsendRemote (makeNodeIdFrom ep) receiverLabel message) nodesEndpoints
+
+receiverLabel :: String
+receiverLabel = "receiver"

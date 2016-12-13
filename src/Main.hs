@@ -27,21 +27,25 @@ main = execParser options >>= \Parameters{..} ->
             when (sendPeriod <= 0)     $ SE.die "Sending period must be positive number."
             when (gracePeriod <= 0)    $ SE.die "Grace period must be positive number."
             when (null nodesEndpoints) $ SE.die "No nodes found, please check your config file."
-            mapM_ (runNode seed) nodesEndpoints
+            mapM_ (runNode seed nodesEndpoints) nodesEndpoints
             waitForSeconds $ sendPeriod - delayForDispatcher 
             sendStopMessageToAllNodes nodesEndpoints 
-            putStrLn "SENT!"
-            waitForSeconds 10            
+            waitForSeconds gracePeriod       
 
 -- | Creates transport point and new node, after that runs one process on it.
-runNode :: Maybe Int -> NodeEndpoint -> IO ()
-runNode seed (NodeEndpoint ip port) =
+runNode :: Maybe Int
+        -> [NodeEndpoint]
+        -> NodeEndpoint
+        -> IO ()
+runNode seed nodesEndpoints (NodeEndpoint ip port) =
     createTransport ip (show port) defaultTCPParameters >>=
         either (report CannotCreateTransport)
                (\transport -> do
                     node <- newLocalNode transport initRemoteTable
                     _ <- forkProcess node $ do
-                        senderPId <- spawnLocal $ runMessagesSender seed
+                        -- Each node contains only one receiver, so it will be unique label.
+                        getSelfPid >>= register receiverLabel
+                        senderPId <- spawnLocal $ runMessagesSender seed nodesEndpoints
                         allReceivedMessages <- runMessagesReceiver senderPId []
                         printOutResult allReceivedMessages
                     return ()
@@ -49,11 +53,7 @@ runNode seed (NodeEndpoint ip port) =
 
 runMessagesReceiver :: ProcessId -> [NumberMessage] -> Process [NumberMessage]
 runMessagesReceiver senderPId receivedMessages = do
-    -- Each node contains only one receiver, so it will be unique label.
-    getSelfPid >>= register "receiver"
-    
     message <- expect :: Process NumberMessage
-    liftIO $ putStrLn "RECEIVED!"
     if thisWasLast message
         then kill senderPId "Sending period is over." >> return receivedMessages
         else runMessagesReceiver senderPId $ receivedMessages ++ [message]
@@ -63,11 +63,11 @@ runMessagesReceiver senderPId receivedMessages = do
     -- So if we receive negative number - it was stop signal, no more sending.
     thisWasLast (_, number) = number < 0
 
-runMessagesSender :: Maybe Int -> Process ()
-runMessagesSender seed = forever $ do
+runMessagesSender :: Maybe Int -> [NodeEndpoint] -> Process ()
+runMessagesSender seed nodesEndpoints = forever $ do
     number <- liftIO $ generateRandomNumber seed
     timeStamp <- liftIO $ getTimeStamp
-    liftIO $ print $ (timeStamp, number)
+    sendToAllReceivers nodesEndpoints $ (timeStamp, number) 
     waitForSeconds 1
 
 -- Forms final result and prints it out.
@@ -109,7 +109,5 @@ sendStopMessageToAllNodes nodesEndpoints =
   where
     sendStopMessage transport = do
         node <- newLocalNode transport initRemoteTable
-        _ <- runProcess node $ 
-            mapM_ (\ep -> nsendRemote (makeNodeIdFrom ep) "receiver" stopMessage) nodesEndpoints
+        _ <- runProcess node $ sendToAllReceivers nodesEndpoints stopMessage
         return ()
-
