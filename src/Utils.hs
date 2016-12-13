@@ -1,7 +1,3 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE RecordWildCards #-}
-
 module Utils where
 
 import           Types
@@ -28,8 +24,8 @@ getTimeStamp = getPOSIXTime >>= return . fromRational . toRational
 -- | Generates random number with or without seed.
 generateRandomNumber :: Maybe Int -> IO Double
 generateRandomNumber maybeSeed = case maybeSeed of
-    Just seed -> return $ let (n, _) = randomR range $ mkStdGen seed in n
-    Nothing   -> randomRIO range
+    Just s  -> return $ let (n, _) = randomR range $ mkStdGen s in n
+    Nothing -> randomRIO range
   where
     range = (0.00000000000000001, 1.0)  -- Yes, I know that it's not the lowest possible value. ;-)
 
