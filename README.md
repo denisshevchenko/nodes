@@ -31,12 +31,13 @@ It means nodes will send messages to each other during 8 seconds. After that, du
 Example of config file:
 
 ```
+127.0.0.1:10300
 127.0.0.1:10200
 127.0.0.1:10201
 127.0.0.1:10202
 ```
 
-In this case program will try to start three nodes on these endpoints.
+In this case program will try to start three last nodes, on `127.0.0.1:10200`, `127.0.0.1:10201` and `127.0.0.1:10202`. These are worker nodes. First endpoint is for special node (for special broadcasting commands).
 
 ## Workflow
 
